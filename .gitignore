@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Build script
+build_nb.py
+
+# Temp OCR files
+*_ocr.txt
+*_detail.md
+*.traineddata
+tessdata/
+images/
