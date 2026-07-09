@@ -1,0 +1,989 @@
+% ============================================================
+%  模糊综合评价模型建立方法 —— 学习笔记
+%  XeLaTeX 编译
+% ============================================================
+\documentclass[a4paper,11pt]{ctexart}
+
+% ---------- 页面 ----------
+\usepackage[top=2.2cm, bottom=2.2cm, left=2.5cm, right=2.5cm]{geometry}
+\usepackage{setspace}
+\setstretch{1.25}
+
+% ---------- 数学 ----------
+\usepackage{amsmath,amssymb}
+
+% ---------- 图表 ----------
+\usepackage{graphicx,float,subcaption}
+\usepackage{booktabs,array,multirow}
+\usepackage{caption}
+\captionsetup[figure]{font=small,labelfont=bf}
+\captionsetup[table]{font=small,labelfont=bf}
+
+% ---------- 代码 ----------
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+    breaklines=true,
+    tabsize=4,
+    language=Python,
+}
+
+% ---------- 链接 ----------
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+% ---------- 提示框 ----------
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\newtcolorbox{keybox}{
+    colback=blue!5, colframe=blue!70, arc=4pt,
+    title=\textbf{核心概念}, fonttitle=\bfseries,
+    breakable
+}
+\newtcolorbox{tipbox}{
+    colback=green!5, colframe=green!60, arc=4pt,
+    title=\textbf{实操技巧}, fonttitle=\bfseries,
+    breakable
+}
+\newtcolorbox{warnbox}{
+    colback=red!5, colframe=red!60, arc=4pt,
+    title=\textbf{避坑提醒}, fonttitle=\bfseries,
+    breakable
+}
+\newtcolorbox{stepbox}[1]{
+    colback=yellow!5, colframe=yellow!60, arc=4pt,
+    title=\textbf{#1}, fonttitle=\bfseries,
+    breakable
+}
+
+% ---------- TikZ 流程图 ----------
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, calc}
+
+% ---------- 页眉 ----------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\kaishu\small 模糊综合评价模型建立方法 · 学习笔记}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+% ============================================================
+%  标题页
+% ============================================================
+\begin{center}
+\vspace*{2cm}
+{\heiti\Huge 模糊综合评价模型建立方法}
+
+\vspace{0.8cm}
+{\kaishu\Large ——从数据处理到结果可视化的全流程学习笔记}
+
+\vspace{1.5cm}
+{\kaishu\large 冯浩然}
+
+\vspace{0.5cm}
+{\songti\small 配套项目：\texttt{fuzzy\_evaluation.ipynb}（Jupyter Notebook）}
+
+\vspace{0.3cm}
+{\songti\small 数据文件：\texttt{company\_data.xlsx}（7公司 $\times$ 19指标）}
+
+\vfill
+{\songti\small \today}
+\end{center}
+\thispagestyle{empty}
+\newpage
+
+% ============================================================
+%  目录
+% ============================================================
+\tableofcontents
+\newpage
+
+% ============================================================
+%  第1章
+% ============================================================
+\section{什么时候用模糊综合评价？}
+
+\subsection{适用场景判断（满足两条以上即适用）}
+
+\begin{enumerate}
+    \item \textbf{指标方向不一致}：有的越大越好（利润），有的越小越好（成本），
+          有的越接近中间越好（资产负债率）。
+    \item \textbf{评价等级有模糊边界}：不能严格说"90 分是优秀、89 分是良好"——边界是渐变的。
+    \item \textbf{权重需要系统化确定}：指标重要性不同，不能拍脑袋分配权重。
+    \item \textbf{需要给多个对象排序}：最终要排出优劣顺序。
+\end{enumerate}
+
+\subsection{不适用场景}
+
+\begin{itemize}
+    \item 数据有明确、无争议的二元判别标准（如"是否通过认证"）。
+    \item 只需要给出一个对象的单一定性结论（如"好/不好"）。
+    \item 指标之间高度线性相关，用简单加权平均即可。
+\end{itemize}
+
+\begin{keybox}
+模糊综合评价（Fuzzy Comprehensive Evaluation, FCE）的\textbf{核心优势}是：
+用隶属函数将精确指标值转化为对多个评价等级的隶属程度（0$\sim$1之间），
+然后用层次分析法（AHP）系统确定权重，最后加权合成为综合得分。
+\end{keybox}
+
+% ============================================================
+%  第2章
+% ============================================================
+\section{方法总览：一张图看懂全过程}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=1.2cm,
+    box/.style={draw, rounded corners, fill=blue!5, text width=6cm, align=center, minimum height=0.9cm},
+    arrow/.style={-{Stealth}, thick}
+]
+\node[box] (N1) {① 构建评价指标体系\\目标层 $\to$ 准则层 $\to$ 指标层};
+\node[box, below=of N1] (N2) {② 数据准备与标准化\\指标分类 + 归一化到 0$\sim$100 分制};
+\node[box, below left=1cm and -1.5cm of N2, text width=5cm] (N3) {③ 设定评价标尺\\五等级 + 梯形隶属函数\\参数表 $[a,b,c,d]$};
+\node[box, below right=1cm and -1.5cm of N2, text width=5cm] (N4) {④ AHP 确定权重\\判断矩阵 + 一致性检验 $CR<0.1$\\方根法 + 多层合成};
+\node[box, below=3cm of N2] (N5) {⑤ 模糊综合评价\\每家公司独立：隶属度矩阵 $\to$\\一级合成(C$\to$B) $\to$ 二级合成(B$\to$A)\\$\to$ 综合得分 $Score = B \cdot S^T$};
+\node[box, below=of N5] (N6) {⑥ 结果可视化与排序\\柱状图 + 堆叠图 + 雷达图 + 权重图};
+
+\draw[arrow] (N1) -- (N2);
+\draw[arrow] (N2.south) -- ++(0,-0.5) -| (N3.north);
+\draw[arrow] (N2.south) -- ++(0,-0.5) -| (N4.north);
+\draw[arrow] (N3.south) |- ++(0,-0.5) -| (N5.north);
+\draw[arrow] (N4.south) |- ++(0,-0.5) -| (N5.north);
+\draw[arrow] (N5) -- (N6);
+\end{tikzpicture}
+\caption{FCE 方法全流程}
+\label{fig:flow}
+\end{figure}
+
+\begin{keybox}
+核心思想：FCE 不是把对象之间相互比较，而是让每个对象独立面对同一把"评价尺子"（五等级标尺），
+用隶属函数度量它在每个等级上的程度，再用权重合成总分。
+\end{keybox}
+
+% ============================================================
+%  第3章
+% ============================================================
+\section{第一步：构建评价指标体系}
+
+\subsection{三层结构模板}
+
+\begin{table}[H]
+\centering
+\caption{评价指标体系的标准三层结构}
+\begin{tabular}{ccll}
+\toprule
+\textbf{层级} & \textbf{别称} & \textbf{作用} & \textbf{本项目示例} \\
+\midrule
+\textbf{目标层（A）} & 最终目标 & 你要评价什么 & 公司综合实力 \\
+\textbf{准则层（B）} & 一级指标 & 从哪几个大方面评价 & B$_1$产品、B$_2$成本、B$_3$销售 \\
+\textbf{指标层（C）} & 二级指标 & 每个方面的具体指标 & C$_1$$\sim$C$_{19}$ 共 19 个 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{设计原则}
+
+\begin{enumerate}
+    \item \textbf{系统性}：B 层覆盖 A 层的主要维度，C 层覆盖 B 层的每个方面
+    \item \textbf{可操作性}：每个 C 层指标能获取数据（真实或模拟均可）
+    \item \textbf{层次性}：同层指标重要性有差异但不能差一个数量级
+    \item \textbf{独立性}：同层指标间信息重叠尽量少
+\end{enumerate}
+
+\begin{tipbox}
+\begin{itemize}
+    \item B 层数量：通常 3$\sim$5 个。太多则层次优势丧失，太少则 C 层过长
+    \item C 层数量：每个 B 下 3$\sim$8 个，总 C 层 10$\sim$25 个为宜
+    \item 确定指标后立即列出表格，标明每个 C 层指标的\textbf{类型}
+\end{itemize}
+\end{tipbox}
+
+\subsection{指标类型分类（必须确定）}
+
+每个二级指标归入以下三类之一，这决定后续用什么隶属函数：
+
+\begin{table}[H]
+\centering
+\caption{三种指标类型}
+\begin{tabular}{clll}
+\toprule
+\textbf{类型} & \textbf{通俗理解} & \textbf{数学特征} & \textbf{本项目数量} \\
+\midrule
+偏大型（效益型） & 越大越好 & 高分 $\to$ 高级别 & 9 个 \\
+偏小型（成本型） & 越小越好 & 低分 $\to$ 高级别 & 8 个 \\
+中间型（适度型） & 中间最好 & 最优区间中心 $\to$ 高级别 & 2 个 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{tipbox}
+不确定类型时问自己："这个指标的理想值在什么位置？"
+答案在高位 $\to$ 偏大型；在低位 $\to$ 偏小型；在中间 $\to$ 中间型。
+\end{tipbox}
+
+\subsection{本项目指标体系}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.80\textwidth}
+\centering
+{\heiti 目标层（A）：公司综合实力}
+
+\vspace{0.3cm}
+\begin{tabular}{c}
+\hline
+{\heiti 公司综合实力评价 A} \\[2pt]
+\hline
+\end{tabular}
+
+\vspace{0.5cm}
+\begin{minipage}[t]{0.30\textwidth}
+\centering
+\begin{tabular}{|c|}
+\hline
+{\heiti B$_1$ 产品综合评价} \\[2pt] \hline
+C$_1$ 产品品牌 \\ C$_2$ 产品质量 \\ C$_3$ 性价比 \\
+C$_4$ 产品款式 \\ C$_5$ 产品包装 \\ C$_6$ 店铺信用度 \\ C$_7$ 售后服务 \\
+\hline
+\end{tabular}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.30\textwidth}
+\centering
+\begin{tabular}{|c|}
+\hline
+{\heiti B$_2$ 成本费用} \\[2pt] \hline
+C$_8$ 材料费 \\ C$_9$ 运输费用 \\ C$_{10}$ 设备维修费用 \\
+C$_{11}$ 运行费用 \\ C$_{12}$ 设备折旧费用 \\ C$_{13}$ 人员工资 \\
+C$_{14}$ 电耗费用 \\ C$_{15}$ 水耗费用 \\
+\hline
+\end{tabular}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.30\textwidth}
+\centering
+\begin{tabular}{|c|}
+\hline
+{\heiti B$_3$ 销售能力} \\[2pt] \hline
+C$_{16}$ 销售人员能力 \\ C$_{17}$ 广告宣传 \\
+C$_{18}$ 行业需求 \\ C$_{19}$ 家庭需求 \\
+\hline
+\end{tabular}
+\end{minipage}
+
+\vspace{0.3cm}
+{\kaishu 准则层（B）：3 个一级指标 \quad 指标层（C）：19 个二级指标}
+\end{minipage}
+\caption{三层评价指标体系}
+\label{fig:structure}
+\end{figure}
+
+% ============================================================
+%  第4章
+% ============================================================
+\section{第二步：准备与标准化数据}
+
+\subsection{数据文件组织（Excel 三工作表结构）}
+
+\begin{table}[H]
+\centering
+\caption{Excel 数据文件的工作表设计}
+\begin{tabular}{cll}
+\toprule
+\textbf{工作表名} & \textbf{内容} & \textbf{作用} \\
+\midrule
+\texttt{原始数据} & 含说明文字的完整数据 & 供人阅读 \\
+\texttt{数据(仅数值)} & 纯数值矩阵，指标为行、公司为列 & \textbf{主数据源（代码读取）} \\
+\texttt{指标体系} & 指标编号、名称、类型 & 供代码自动判断函数类型 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{评分标准化方法}
+
+不同指标量纲不同，必须统一到 \textbf{0$\sim$100 分制}。
+
+\textbf{偏大型指标（如产品质量）：}
+数据本身是评分时直接使用；是原始值（如销量 12000 件）时用线性映射：
+\[
+\text{标准化分} = \frac{\text{原始值} - \text{最低值}}{\text{最高值} - \text{最低值}} \times 100
+\]
+
+\textbf{偏小型指标（如材料费）：}
+先转为成本占比 $\frac{\text{成本}}{\text{营收}} \times 100$，值越小越优。
+
+\textbf{中间型指标（如产品品牌）：}
+以偏离最优区间中心的距离评分。
+
+\subsection{代码读取 Excel}
+
+\begin{lstlisting}
+import pandas as pd
+
+df_raw = pd.read_excel('company_data.xlsx',
+                       sheet_name='数据(仅数值)', index_col=0)
+df_meta = pd.read_excel('company_data.xlsx',
+                       sheet_name='指标体系')
+
+# 构建 "指标名 -> 类型" 映射
+indicator_types = dict(zip(df_meta['二级指标'], df_meta['指标类型']))
+
+companies = df_raw.columns.tolist()    # ['a', 'b', ..., 'g']
+indicators = df_raw.index.tolist()     # ['C1_...', ..., 'C19_...']
+\end{lstlisting}
+
+\begin{keybox}
+\texttt{indicator\_types} 字典是隶属函数计算的\textbf{调度中心}，
+代码通过它自动判断每个指标该用偏大型、偏小型还是中间型函数。
+\end{keybox}
+
+% ============================================================
+%  第5章
+% ============================================================
+\section{第三步：设定评价等级与隶属函数}
+
+这是 FCE 区别于普通加权评分的\textbf{最核心步骤}。
+
+\subsection{五级评价标尺}
+
+\begin{table}[H]
+\centering
+\caption{五级评价等级与分值}
+\begin{tabular}{lccccc}
+\toprule
+等级 $v_i$ & $v_1$ 优秀 & $v_2$ 良好 & $v_3$ 中等 & $v_4$ 较差 & $v_5$ 很差 \\
+\midrule
+分值 $s_i$ & 100 & 80 & 60 & 40 & 20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{warnbox}
+为什么不用三级或七级？
+\begin{itemize}
+    \item 三级太粗糙，区分度不够
+    \item 七级以上相邻等级语义重叠严重
+    \item 五级与百分制每 20 分一档自然对应，是领域内最成熟的设定
+\end{itemize}
+\end{warnbox}
+
+\subsection{梯形隶属函数的几何含义}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.9]
+    % 坐标轴
+    \draw[->] (0,0) -- (10,0) node[right] {$x$};
+    \draw[->] (0,0) -- (0,4.5) node[above] {$\mu$};
+    \draw (0,4) node[left] {1};
+
+    % 梯形
+    \draw[thick, blue] (1,0) -- (2.5,4) -- (5.5,4) -- (7,0);
+    \draw[dashed, gray] (2.5,0) node[below] {$b$} -- (2.5,4);
+    \draw[dashed, gray] (5.5,0) node[below] {$c$} -- (5.5,4);
+    \draw[dashed, gray] (1,0) node[below] {$a$} -- (1,0);
+    \draw[dashed, gray] (7,0) node[below] {$d$} -- (7,0);
+
+    \node[blue] at (1.75, 2) {升坡};
+    \node[blue] at (4, 4.3) {平坦顶部};
+    \node[blue] at (6.25, 2) {降坡};
+    \node at (4, -0.6) {$\mu = 1.0$（完全隶属）};
+\end{tikzpicture}
+\caption{梯形隶属函数的四参数 $[a,b,c,d]$}
+\label{fig:trapezoid}
+\end{figure}
+
+为什么选梯形？
+\begin{itemize}
+    \item 三角形（两端尖）$\to$ 完全隶属只有一个点，对数据太敏感
+    \item \textbf{梯形（顶部平坦）$\to$ 有一个稳定区间，更符合直觉}
+    \item 高斯型 $\to$ 参数多、难以解释
+\end{itemize}
+
+\subsection{三种梯形函数的 Python 实现}
+
+\begin{lstlisting}
+def trapezoid_up(x, a, b, c, d):
+    """偏大型：效益型指标，x 越大隶属度越高"""
+    if x <= a:      return 0.0
+    elif x <= b:    return (x - a) / (b - a)
+    elif x <= c:    return 1.0
+    elif x <= d:    return (d - x) / (d - c)
+    else:           return 0.0
+
+def trapezoid_down(x, a, b, c, d):
+    """偏小型：成本型指标，x 越小隶属度越高"""
+    if x <= a:      return 1.0
+    elif x <= b:    return (b - x) / (b - a)
+    elif x <= c:    return 0.0
+    elif x <= d:    return (x - c) / (d - c)
+    else:           return 0.0
+
+def trapezoid_mid(x, a, b, c, d):
+    """中间型：在区间 [b, c] 内最优"""
+    if x <= a:      return 0.0
+    elif x <= b:    return (x - a) / (b - a)
+    elif x <= c:    return 1.0
+    elif x <= d:    return (d - x) / (d - c)
+    else:           return 0.0
+\end{lstlisting}
+
+\subsection{参数设置（最需人工判断的一步）}
+
+\begin{table}[H]
+\centering
+\caption{五等级 $\times$ 三类型的 15 组隶属函数参数 $[a,b,c,d]$}
+\begin{tabular}{ccccc}
+\toprule
+等级 & 分值 & 偏大型 & 偏小型 & 中间型 \\
+\midrule
+$v_1$ 优秀 & 100 & (80, 90, 100, 100) & (0, 0, 15, 25)  & (65, 75, 85, 95) \\
+$v_2$ 良好 & 80  & (70, 80, 80, 90)   & (15, 25, 25, 35) & (55, 65, 65, 75) \\
+$v_3$ 中等 & 60  & (60, 70, 70, 80)   & (25, 35, 35, 45) & (45, 55, 55, 65) \\
+$v_4$ 较差 & 40  & (50, 60, 60, 70)   & (35, 45, 45, 55) & (35, 45, 45, 55) \\
+$v_5$ 很差 & 20  & (0, 0, 50, 60)     & (45, 55, 100, 100) & (0, 0, 35, 45) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{keybox}
+\textbf{参数设置的黄金法则：确保相邻等级之间有重叠过渡区。}
+
+以偏大型"优秀" $[80,90,100,100]$ 和"良好" $[70,80,80,90]$ 为例：
+两者在 80$\sim$90 区间形成对称过渡——在 85 分处，对"优秀"的隶属度为 $(85-80)/10 = 0.5$，
+对"良好"的隶属度为 $(90-85)/10 = 0.5$，恰好各半，体现了"边界模糊"特性。
+\end{keybox}
+
+\subsection{计算隶属度矩阵}
+
+\begin{lstlisting}
+GRADE_KEYS = ['v1_优秀', 'v2_良好', 'v3_中等',
+              'v4_较差', 'v5_很差']
+
+def calc_membership(value, itype):
+    """对单个指标值，返回其对 5 个等级的隶属度向量"""
+    if itype == '偏大型':
+        func, params = trapezoid_up, GRADE_PARAMS_UP
+    elif itype == '偏小型':
+        func, params = trapezoid_down, GRADE_PARAMS_DOWN
+    else:
+        func, params = trapezoid_mid, GRADE_PARAMS_MID
+    return np.array([func(value, *params[gk]) for gk in GRADE_KEYS])
+
+# 对每家公司、每个指标逐一计算
+R_matrices = {}
+for comp in companies:
+    R_matrices[comp] = {}
+    for ind in indicators:
+        value = df_raw.loc[ind, comp]
+        R_matrices[comp][ind] = calc_membership(value, indicator_types[ind])
+\end{lstlisting}
+
+\subsection{隶属度计算实例}
+
+\textbf{示例 1：C$_2$ 产品质量（$x=94.7$，偏大型）}
+
+\begin{itemize}
+    \item 优秀 $[80,90,100,100]$：$94.7 \in [90,100] \Rightarrow \mu = \mathbf{1.000}$
+    \item 良好 $[70,80,80,90]$：$94.7 > 90 \Rightarrow \mu = 0.000$
+    \item 中等/较差/很差：同理 $\mu = 0.000$
+\end{itemize}
+
+结果：$[1.000,\, 0.000,\, 0.000,\, 0.000,\, 0.000]$——\textbf{完全隶属"优秀"}。
+
+\textbf{示例 2：C$_3$ 性价比（$x=87.0$，偏大型）——展示边界过渡}
+
+\begin{itemize}
+    \item 优秀 $[80,90,100,100]$：$87.0 \in [80,90)$，$\mu = (87-80)/(90-80) = \mathbf{0.700}$
+    \item 良好 $[70,80,80,90]$：$87.0 \in (80,90]$，$\mu = (90-87)/(90-80) = \mathbf{0.300}$
+    \item 中等/较差/很差：$\mu = 0.000$
+\end{itemize}
+
+结果：$[0.700,\, 0.300,\, 0.000,\, 0.000,\, 0.000]$——\textbf{70\% 优秀 + 30\% 良好}。
+
+\begin{keybox}
+这就是 FCE 区别于"一刀切"评分的核心：87 分的性价比不是被强行归入"优秀"或"良好"，
+而是精确保留了在两者之间的模糊过渡状态。这种信息在后续加权后会体现在综合得分的小数部分。
+\end{keybox}
+
+% ============================================================
+%  第6章
+% ============================================================
+\section{第四步：用 AHP 确定权重}
+
+\subsection{AHP 是什么？}
+
+层次分析法（Analytic Hierarchy Process）由 Saaty 于 1977 年提出，
+核心思想：将 n 个指标的权重问题转化为 $n(n-1)/2$ 次两两比较，
+用数学方法从判断矩阵中提取一致性的权重向量。
+
+\subsection{1$\sim$9 标度法}
+
+\begin{table}[H]
+\centering
+\caption{1$\sim$9 标度含义}
+\begin{tabular}{cl}
+\toprule
+\textbf{标度} & \textbf{含义} \\
+\midrule
+1 & 两个因素同等重要 \\
+3 & 前者比后者稍微重要 \\
+5 & 前者比后者明显重要 \\
+7 & 前者比后者强烈重要 \\
+9 & 前者比后者极端重要 \\
+2,4,6,8 & 相邻判断的中间值 \\
+倒数 & $a_{ji} = 1/a_{ij}$（反向比较） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{方根法求权重（三步走）}
+
+\begin{stepbox}{Step 1：构造判断矩阵}
+用 1$\sim$9 标度法两两比较，填满 $n \times n$ 的正互反矩阵 $A$。
+对角线全为 1，对立位置互为倒数。
+\end{stepbox}
+
+\begin{stepbox}{Step 2：方根法计算权重}
+每行求几何平均 $\to$ 归一化：
+\[
+w_i = \frac{(\prod_{j=1}^{n} a_{ij})^{1/n}}{\sum_{i=1}^{n}(\prod_{j=1}^{n} a_{ij})^{1/n}}
+\]
+选方根法而非特征向量法的原因：计算简便且精度几乎相同。
+\end{stepbox}
+
+\begin{stepbox}{Step 3：一致性检验}
+\[
+\lambda_{\max} = \frac{1}{n}\sum_{i=1}^{n} \frac{(AW)_i}{w_i},\quad
+CI = \frac{\lambda_{\max} - n}{n - 1},\quad
+CR = \frac{CI}{RI}
+\]
+要求 $CR < 0.1$，否则需调整判断矩阵。
+\end{stepbox}
+
+\subsection{Python 实现}
+
+\begin{lstlisting}
+def ahp_weights(judgment_matrix, method='geometric_mean'):
+    n = judgment_matrix.shape[0]
+    geo_mean = np.power(np.prod(judgment_matrix, axis=1), 1.0 / n)
+    weights = geo_mean / np.sum(geo_mean)
+    Aw = judgment_matrix @ weights
+    lambda_max = np.mean(Aw / weights)
+    CI = (lambda_max - n) / (n - 1) if n > 1 else 0.0
+    RI_table = {1:0, 2:0, 3:0.58, 4:0.90, 5:1.12, 6:1.24,
+                7:1.32, 8:1.41, 9:1.45, 10:1.49}
+    RI = RI_table.get(n, 1.5)
+    CR = CI / RI if RI > 0 else 0.0
+    return weights, lambda_max, CR
+\end{lstlisting}
+
+\subsection{本项目的四个判断矩阵}
+
+本项目共需构造 1（一级）+ 3（二级）= 4 个判断矩阵。
+
+\textbf{一级矩阵 A$\to$B（3$\times$3）：}
+
+\begin{center}
+\begin{tabular}{c|ccc|c}
+\toprule
+A & B$_1$ 产品 & B$_2$ 成本 & B$_3$ 销售 & \textbf{权重} \\
+\midrule
+B$_1$ 产品 & 1   & 2   & 3   & \textbf{0.5396} \\
+B$_2$ 成本 & 1/2 & 1   & 2   & \textbf{0.2970} \\
+B$_3$ 销售 & 1/3 & 1/2 & 1   & \textbf{0.1634} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+$\lambda_{\max}=3.0092$，$CI=0.0046$，$CR=0.0079 < 0.1$~\checkmark
+
+\textbf{二级矩阵（3 个）：}
+B$_1$$\to$C（7$\times$7）：
+C$_2$ 质量 = C$_3$ 性价比（0.2468）$>$ C$_6$ 信用 = C$_7$ 售后（0.1396）$>$ C$_1$=C$_4$=C$_5$（0.0758）
+
+B$_2$$\to$C（8$\times$8）：
+C$_8$ 材料费最高（0.2499）$>$ C$_9$$\sim$C$_{12}$ 运营费（0.1433）$>$ C$_{13}$ 工资（0.0798）$>$ C$_{14}$=C$_{15}$（0.0485）
+
+B$_3$$\to$C（4$\times$4）：
+C$_{16}$ 销售能力最高（0.4231）$>$ C$_{18}$=C$_{19}$ 需求（0.2274）$>$ C$_{17}$ 广告（0.1222）
+
+全部 $CR < 0.1$，通过一致性检验。
+
+\begin{warnbox}
+\textbf{CR 偏高怎么办？}
+找出判断矩阵中的"三角矛盾"（如 A$>$B, B$>$C, 但 C$>$A），
+修改最不合理那条判断，重新计算 CR 直到 $< 0.1$。
+3$\times$3 矩阵通常自然满足，7$\times$7 以上容易偏高，需仔细检查。
+\end{warnbox}
+
+\subsection{多层权重合成}
+
+\[
+w_i^{\text{综合}} = \frac{w_B^{(i)} \cdot w_C^{(i)}}{\sum_k w_B^{(k)} \cdot w_C^{(k)}}
+\]
+
+\begin{lstlisting}
+combined = np.concatenate([
+    w_B[0] * w_C1,   # B1 下 7 个指标
+    w_B[1] * w_C2,   # B2 下 8 个指标
+    w_B[2] * w_C3,   # B3 下 4 个指标
+])
+combined = combined / np.sum(combined)
+\end{lstlisting}
+
+\textbf{综合权重前三名：} C$_3$ 性价比（13.32\%）= C$_2$ 产品质量（13.32\%）$>$ C$_6$ 店铺信用度（7.53\%）。
+集中在产品维度，与该维度一级权重 53.96\% 一致。
+
+% ============================================================
+%  第7章
+% ============================================================
+\section{第五步：执行模糊综合评价}
+
+\subsection{两级合成的逻辑}
+
+\begin{center}
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners, fill=blue!5, text width=7cm, align=center, minimum height=0.7cm},
+    arrow/.style={-{Stealth}, thick}
+]
+\node[box] (C) {19 个 C 层指标的隶属度矩阵 $R$（19$\times$5）};
+\node[box, below=0.8cm of C] (B) {3 个 B 层评价向量（3$\times$5）\\
+\textbf{一级合成：}$B_k = W_C^{(k)} \cdot R_{B_k}$};
+\node[box, below=0.8cm of B] (A) {1 个最终评价向量（1$\times$5）\\
+\textbf{二级合成：}$B = W_B \cdot R_{\text{total}}$};
+\node[box, below=0.8cm of A] (S) {1 个综合得分\\
+$\text{Score} = B \cdot S^T = \sum b_j \cdot s_j$};
+\draw[arrow] (C) -- (B);
+\draw[arrow] (B) -- (A);
+\draw[arrow] (A) -- (S);
+\end{tikzpicture}
+\end{center}
+
+\subsection{合成算子：M($\cdot$,$\oplus$) 加权平均型}
+
+\[
+b_j = \sum_{i=1}^{n} w_i \cdot r_{ij} \quad (j = 1,\dots,5)
+\]
+
+选择理由：权重与隶属度逐项相乘后求和，\textbf{不丢弃任何信息}。
+每个指标的每个等级隶属度都参与了最终结果的计算。
+
+\begin{warnbox}
+其他算子的局限性：
+\begin{itemize}
+    \item $M(\wedge,\vee)$（取小取大）——只用最突出因素的信息，损失严重
+    \item $M(\cdot,\vee)$（乘积取大）——丢失非最大项的贡献
+    \item $M(\cdot,\oplus)$（加权平均）——\textbf{保留全部信息，是默认首选}
+\end{itemize}
+\end{warnbox}
+
+\subsection{完整计算实例：公司 a}
+
+\textbf{一级合成——B$_1$ 产品维度：}
+
+\begin{align*}
+B_1^{a} &= [0.0758,\,0.2468,\,0.2468,\,0.0758,\,0.0758,\,0.1396,\,0.1396] \\
+        &\quad \cdot
+        \begin{bmatrix}
+        1.000 & 0.000 & 0 & 0 & 0 \\
+        1.000 & 0.000 & 0 & 0 & 0 \\
+        0.700 & 0.300 & 0 & 0 & 0 \\
+        0.910 & 0.090 & 0 & 0 & 0 \\
+        0.030 & 0.970 & 0 & 0 & 0 \\
+        1.000 & 0.000 & 0 & 0 & 0 \\
+        0.690 & 0.310 & 0 & 0 & 0
+        \end{bmatrix} \\
+        &= [0.802,\,0.198,\,0.000,\,0.000,\,0.000]
+\end{align*}
+
+$\to$ 产品维度 80.2\% 隶属"优秀"，19.8\% 隶属"良好"。
+
+\textbf{同理得 B$_2$ 成本和 B$_3$ 销售：}
+
+$B_2^a = [0.046,\,0.190,\,0.253,\,0.255,\,0.255]$ $\to$ 最大等级：较差
+
+$B_3^a = [0.000,\,0.480,\,0.520,\,0.000,\,0.000]$ $\to$ 最大等级：中等
+
+\textbf{二级合成——公司整体评价向量：}
+
+\begin{align*}
+B_a &= 0.5396 \times [0.802,0.198,0,0,0] \\
+    &\quad + 0.2970 \times [0.046,0.190,0.253,0.255,0.255] \\
+    &\quad + 0.1634 \times [0,0.480,0.520,0,0] \\
+    &= [0.447,\,0.242,\,0.160,\,0.076,\,0.076]
+\end{align*}
+
+$\to$ 公司整体 44.7\% 隶属"优秀"（最高）。
+
+\textbf{综合得分：}
+
+\begin{align*}
+\text{Score}_a &= 0.447 \times 100 + 0.242 \times 80 + 0.160 \times 60 + 0.076 \times 40 + 0.076 \times 20 \\
+               &= 44.7 + 19.4 + 9.6 + 3.0 + 1.5 = \mathbf{78.15}
+\end{align*}
+
+\subsection{七家公司最终排名}
+
+\begin{table}[H]
+\centering
+\caption{七家公司最终模糊评价结果及排序}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{排名} & \textbf{公司} & \textbf{评价向量（优,良,中,差,很差）} & \textbf{等级} & \textbf{得分} \\
+\midrule
+1 & d & (0.505, 0.270, 0.077, 0.074, 0.074) & 优秀 & \textbf{81.14} \\
+2 & a & (0.447, 0.242, 0.160, 0.076, 0.076) & 优秀 & 78.15 \\
+3 & c & (0.183, 0.428, 0.227, 0.081, 0.081) & 良好 & 71.02 \\
+4 & e & (0.276, 0.300, 0.183, 0.154, 0.087) & 良好 & 70.50 \\
+5 & b & (0.186, 0.326, 0.297, 0.115, 0.076) & 良好 & 68.66 \\
+6 & f & (0.080, 0.390, 0.315, 0.120, 0.095) & 良好 & 64.79 \\
+7 & g & (0.127, 0.229, 0.415, 0.128, 0.101) & 中等 & 63.04 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{keybox}
+d 的胜出原因：三个维度均衡。产品维度优秀（0.787）、成本维度七家中最佳（0.243）、
+销售维度良好（0.506）。结合原始数据，d 的成本指标值（C$_8$$\sim$C$_{15}$）全面低于对手，
+尤其是材料费（8.6 vs 行业均值 $\approx$28），形成了显著的成本护城河。
+\end{keybox}
+
+% ============================================================
+%  第8章
+% ============================================================
+\section{第六步：结果可视化}
+
+本项目的 5 张图与它们各自回答的问题：
+
+\begin{table}[H]
+\centering
+\caption{五张可视化图表的功能说明}
+\begin{tabular}{cll}
+\toprule
+\textbf{图表} & \textbf{文件名} & \textbf{回答的问题} \\
+\midrule
+图1 综合得分柱状图 & \texttt{score\_ranking.png} & 谁是第一、谁最后？差距多大？ \\
+图2 等级隶属度堆叠图 & \texttt{grade\_distribution.png} & 每家公司"优秀/良好/..."占比？ \\
+图3 一级指标雷达图 & \texttt{radar\_chart.png} & 每家在三个维度上谁强谁弱？ \\
+图4 一级指标分组图 & \texttt{dimension\_comparison.png} & 所有公司在同一维度的直接对比 \\
+图5 权重分布图 & \texttt{weight\_distribution.png} & 19 个指标中谁的权重最大/最小？ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{各图设计要点}
+
+\textbf{图 1（得分柱状图）：}最高分红标；四条等级分界线（85/70/50/35）用虚线标注。
+
+\textbf{图 2（隶属度堆叠图）：}颜色从绿（优秀）$\to$ 红（很差），形成视觉梯度；
+每段 >5\% 时才标注数字。
+
+\textbf{图 3（雷达图）：}三轴对应三个 B 层维度；7 条不同颜色的线 = 7 家公司的"三维画像"。
+用 \texttt{subplot\_kw=dict(polar=True)} 创建极坐标。
+
+\textbf{图 4（分组柱状图）：}每组 3 根柱子，三种颜色对应三个维度，
+白色数字标注在柱内（值 >15 时才标注）。
+
+\textbf{图 5（权重图）：}水平条形图，按权重升序排列；
+三色编码（红 >6\%，橙 >4\%，蓝 $\leq$4\%），每根右侧标精确百分比。
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{score_ranking.png}
+    \caption{综合得分排序}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{grade_distribution.png}
+    \caption{等级隶属度堆叠}
+\end{subfigure}
+
+\vspace{0.3cm}
+\begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{radar_chart.png}
+    \caption{一级指标雷达图}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{dimension_comparison.png}
+    \caption{一级指标分组对比}
+\end{subfigure}
+
+\vspace{0.3cm}
+\begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{weight_distribution.png}
+    \caption{综合权重分布}
+\end{subfigure}
+\caption{五张结果可视化图表}
+\label{fig:allcharts}
+\end{figure}
+
+% ============================================================
+%  第9章
+% ============================================================
+\section{代码架构与复用指南}
+
+\subsection{项目文件结构}
+
+\begin{verbatim}
+项目目录/
+├── company_data.xlsx          # 原始数据（3 个工作表）
+├── fuzzy_evaluation.ipynb     # Jupyter Notebook 主代码
+├── paper.tex / paper.pdf      # LaTeX 学术论文
+├── score_ranking.png          # 图1：综合得分柱状图
+├── grade_distribution.png     # 图2：等级隶属度堆叠图
+├── radar_chart.png            # 图3：雷达图
+├── dimension_comparison.png   # 图4：分组柱状图
+└── weight_distribution.png    # 图5：权重分布图
+\end{verbatim}
+
+\subsection{Notebook 模块划分}
+
+\begin{table}[H]
+\centering
+\caption{Jupyter Notebook 的四模块结构}
+\begin{tabular}{clll}
+\toprule
+\textbf{模块} & \textbf{功能} & \textbf{核心函数} & \textbf{输出} \\
+\midrule
+导入库 & NumPy/Pandas/Matplotlib + 中文字体 & — & — \\
+模块 1 & 读 Excel $\to$ 隶属函数 $\to$ 隶属度矩阵 & \texttt{calc\_membership} & \texttt{R\_matrices} \\
+模块 2 & 判断矩阵 $\to$ 方根法 $\to$ CR $\to$ 权重合成 & \texttt{ahp\_weights} & \texttt{w\_B}, \texttt{combined\_weights} \\
+模块 3 & 两级模糊合成 $\to$ 得分排序 & — & \texttt{final\_results} \\
+模块 4 & 5 张可视化图表 & — & 5 个 .png 文件 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{复用到自己的项目需要改什么？}
+
+\begin{table}[H]
+\centering
+\caption{最小改动清单}
+\begin{tabular}{cl}
+\toprule
+\textbf{需要修改} & \textbf{说明} \\
+\midrule
+数据文件 & 替换为你的 Excel，保持相同的工作表结构 \\
+\texttt{GRADE\_PARAMS\_*} & 根据你的问题调整各等级 $[a,b,c,d]$ 参数 \\
+4 个判断矩阵 & 根据你的指标重要性重新用 1$\sim$9 标度打分 \\
+\texttt{B\_groups} 字典 & 根据你的指标分组调整起止索引 \\
+\texttt{GRADE\_NAMES}, \texttt{S} & 如需不同等级名称或分值 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+其余代码（隶属函数、AHP 方根法、两级合成、可视化）均可直接复用。
+
+% ============================================================
+%  第10章
+% ============================================================
+\section{常见问题与避坑指南}
+
+\subsection{Q1：隶属函数参数怎么选？}
+
+没有标准答案，但有一套可操作的方法：
+\begin{enumerate}
+    \item 定"完全隶属区间"的最值（如"90$\sim$100 分属优秀"）
+    \item 定过渡带宽度（通常 10$\sim$15 分，太窄则接近刚性分类，太宽则区分度下降）
+    \item 保证相邻等级有重叠区
+    \item 在 50、70、85 等分界点附近做抽查，验证隶属度是否合理
+    \item 如果结果不合理，调整参数后重新跑
+\end{enumerate}
+
+\subsection{Q2：CR > 0.1 怎么办？}
+
+\begin{enumerate}
+    \item 找出判断矩阵中"三角不一致"的地方（A$>$B, B$>$C, 但 C$>$A）
+    \item 改掉最明显不合理的那条判断
+    \item 重新计算 CR
+    \item 重复直到 $CR < 0.1$
+\end{enumerate}
+
+\subsection{Q3：为什么隶属度矩阵里有全 1 或全 0 的行？}
+
+检查两点：
+\begin{itemize}
+    \item 参数表是否覆盖了整个 0$\sim$100 区间？
+    \item 偏小型指标是否误用了 \texttt{trapezoid\_up}？
+\end{itemize}
+
+\subsection{Q4：能改成四等级或七等级吗？}
+
+可以，但需要注意：
+\begin{itemize}
+    \item 同步修改 \texttt{GRADE\_NAMES}、分值向量 S、参数表（3 组 $\times$ n 等级）
+    \item 4 级太粗糙，7 级以上语义重叠严重
+    \item \textbf{建议保持 5 级}，是领域内最成熟的设定
+\end{itemize}
+
+\subsection{Q5：四种模糊合成算子的区别？}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{cll}
+\toprule
+\textbf{算子} & \textbf{类型} & \textbf{使用场景} \\
+\midrule
+$M(\cdot,\oplus)$ & 加权平均型 & \textbf{默认首选}，保留全部信息 \\
+$M(\wedge,\vee)$ & 主因素决定型 & 数据稀疏，少数指标突出 \\
+$M(\cdot,\vee)$ & 主因素突出型 & 同上，但能利用部分权重 \\
+$M(\wedge,\oplus)$ & 取小有界和 & 极少使用 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Q6：如何做灵敏度分析？}
+
+\begin{itemize}
+    \item \textbf{参数灵敏度：}将优秀等级的过渡带从 10 分改为 8/12 分，看排名是否变化
+    \item \textbf{AHP 灵敏度：}将判断标度 $\pm$1，看权重变化幅度
+    \item \textbf{权重组合灵敏度：}固定一级权重，随机扰动二级权重，观察排名稳定性
+\end{itemize}
+
+% ============================================================
+%  附录
+% ============================================================
+\section*{附录：项目文件清单}
+\addcontentsline{toc}{section}{附录：项目文件清单}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{cl}
+\toprule
+\textbf{文件} & \textbf{说明} \\
+\midrule
+\texttt{company\_data.xlsx} & 7 公司 $\times$ 19 指标原始数据 \\
+\texttt{fuzzy\_evaluation.ipynb} & Jupyter Notebook 完整代码 \\
+\texttt{paper.tex} / \texttt{paper.pdf} & LaTeX 学术论文（18 页） \\
+\texttt{README.md} & 项目说明 \\
+\texttt{score\_ranking.png} & 综合得分排序柱状图 \\
+\texttt{grade\_distribution.png} & 评价等级隶属度堆叠图 \\
+\texttt{radar\_chart.png} & 一级指标雷达图 \\
+\texttt{dimension\_comparison.png} & 一级指标分组对比柱状图 \\
+\texttt{weight\_distribution.png} & 综合权重水平条形图 \\
+\texttt{\mbox{模糊综合评价模型建立方法.md}} & Markdown 版方法指南 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

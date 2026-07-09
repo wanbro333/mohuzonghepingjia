@@ -3,10 +3,14 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 
-# Build script
-build_nb.py
+# LaTeX 编译临时文件
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
 
-# Temp OCR files
+# 临时文件
 *_ocr.txt
 *_detail.md
 *.traineddata
